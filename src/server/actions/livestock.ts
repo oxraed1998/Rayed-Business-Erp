@@ -1,75 +1,32 @@
 "use server";
-import { z } from "zod";
-import { companyAction } from "@/server/action";
-import { addHerdExpense, createHerd, recordHerdBirth, recordHerdDeath, recordHerdPurchase, recordHerdWeighing, sellFromHerd } from "@/server/services/livestock";
-import { ServiceError, zBool, zDate, zId, zInt, zNonNegMoney, zOptId, zOptText, zPositiveMoney, zText } from "@/server/services/actor";
+// Server Action entry points. Implementations live in src/server/actions-impl
+// (Next.js only allows async functions in "use server" modules).
+import * as impl from "@/server/actions-impl/livestock";
 
-const settlement = z.object({ accountId: z.string().min(1, "اختر طريقة السداد"), supplierId: zOptId });
-const qty = zInt(1, 1_000_000);
+export async function createHerdAction(...args: Parameters<typeof impl.createHerdAction>) {
+  return impl.createHerdAction(...args);
+}
 
-export const createHerdAction = companyAction(
-  { permission: "livestock.create", schema: z.object({ name: zText(100), species: zText(60), breed: zOptText(60), location: zOptText(120), activityId: zOptId, shipmentId: zOptId, notes: zOptText(1000) }) },
-  async ({ tx, data, actor }) => {
-    const h = await createHerd(tx, actor, data);
-    return { message: "تم إنشاء القطيع", redirect: `/livestock/${h.id}` };
-  },
-);
+export async function herdPurchaseAction(...args: Parameters<typeof impl.herdPurchaseAction>) {
+  return impl.herdPurchaseAction(...args);
+}
 
-export const herdPurchaseAction = companyAction(
-  { permission: "livestock.create", schema: z.object({ herdId: zId, date: zDate, quantity: qty, amount: zPositiveMoney, settlement, note: zOptText(300) }) },
-  async ({ tx, data, actor }) => {
-    await recordHerdPurchase(tx, actor, data);
-    return "تم تسجيل الشراء وترحيل القيد";
-  },
-);
+export async function herdExpenseAction(...args: Parameters<typeof impl.herdExpenseAction>) {
+  return impl.herdExpenseAction(...args);
+}
 
-export const herdExpenseAction = companyAction(
-  { permission: "livestock.update", schema: z.object({ herdId: zId, category: zText(40), description: zOptText(300), amount: zPositiveMoney, vatAmount: zNonNegMoney.optional(), vatRecoverable: zBool, date: zDate, settlement }) },
-  async ({ tx, data, actor }) => {
-    await addHerdExpense(tx, actor, data);
-    return "تم تسجيل المصروف وإضافته لتكلفة القطيع";
-  },
-);
+export async function herdBirthAction(...args: Parameters<typeof impl.herdBirthAction>) {
+  return impl.herdBirthAction(...args);
+}
 
-export const herdBirthAction = companyAction(
-  { permission: "livestock.update", schema: z.object({ herdId: zId, date: zDate, quantity: qty, note: zOptText(300) }) },
-  async ({ tx, data, actor }) => {
-    await recordHerdBirth(tx, actor, data);
-    return "تم تسجيل المواليد";
-  },
-);
+export async function herdDeathAction(...args: Parameters<typeof impl.herdDeathAction>) {
+  return impl.herdDeathAction(...args);
+}
 
-export const herdDeathAction = companyAction(
-  { permission: "livestock.update", schema: z.object({ herdId: zId, date: zDate, quantity: qty, note: zOptText(300) }) },
-  async ({ tx, data, actor }) => {
-    await recordHerdDeath(tx, actor, data);
-    return "تم تسجيل النفوق وتحميل تكلفته";
-  },
-);
+export async function herdWeighingAction(...args: Parameters<typeof impl.herdWeighingAction>) {
+  return impl.herdWeighingAction(...args);
+}
 
-export const herdWeighingAction = companyAction(
-  {
-    permission: "livestock.update",
-    schema: z.object({ herdId: zId, date: zDate, quantity: zInt(0, 1_000_000), avgWeightKg: z.coerce.number().positive("الوزن غير صالح").max(5000), note: zOptText(300) }),
-  },
-  async ({ tx, data, actor }) => {
-    await recordHerdWeighing(tx, actor, data);
-    return "تم تسجيل الوزن";
-  },
-);
-
-export const herdSaleAction = companyAction(
-  {
-    permission: "invoices.create",
-    schema: z.object({
-      herdId: zId, customerId: z.string().min(1, "اختر العميل"), date: zDate, quantity: qty, unitPrice: zPositiveMoney, vatRate: z.coerce.number().min(0).max(100),
-      paidAmount: zNonNegMoney.optional(), paidAccountId: zOptId,
-    }),
-  },
-  async ({ tx, data, actor }) => {
-    const paid = data.paidAmount && Number(data.paidAmount) > 0;
-    if (paid && !data.paidAccountId) throw new ServiceError("اختر حساب الاستلام للمبلغ المدفوع");
-    const r = await sellFromHerd(tx, actor, { ...data, paidNow: paid ? { amount: data.paidAmount!, accountId: data.paidAccountId! } : null });
-    return { message: `تم البيع وإصدار الفاتورة ${r.invoice.number} · الربح ${r.profit.toFixed(2)}`, redirect: `/invoices/${r.invoice.id}` };
-  },
-);
+export async function herdSaleAction(...args: Parameters<typeof impl.herdSaleAction>) {
+  return impl.herdSaleAction(...args);
+}
