@@ -207,7 +207,13 @@ export async function voidInvoice(tx: Tx, actor: Actor, invoiceId: string) {
   if (!inv) throw NotFound("الفاتورة");
   if (inv.status === "VOID") throw new ServiceError("الفاتورة ملغاة مسبقًا");
   if (inv.allocations.length) throw new ServiceError("لا يمكن إلغاء فاتورة عليها دفعات. اعكس الدفعات أولًا أو أصدر إشعارًا دائنًا.");
+  if (inv.type !== "CREDIT_NOTE" && D(inv.amountPaid).gt(0)) throw new ServiceError("لا يمكن إلغاء فاتورة طُبّق عليها إشعار دائن؛ ألغِ الإشعار أولًا");
   if (inv.status === "POSTED" && inv.journalEntryId) await reverseJournalEntry(tx, actor.tenantId, inv.journalEntryId, actor.userId);
+  // A voided credit note no longer reduces what is owed on the original invoice.
+  if (inv.type === "CREDIT_NOTE" && inv.relatedInvoiceId && D(inv.amountPaid).gt(0)) {
+    const rel = await tx.invoice.findUniqueOrThrow({ where: { id: inv.relatedInvoiceId } });
+    await tx.invoice.update({ where: { id: rel.id }, data: { amountPaid: toDb(D(rel.amountPaid).minus(inv.amountPaid)) } });
+  }
   await tx.invoice.update({ where: { id: inv.id }, data: { status: "VOID" } });
   await audit(tx, { tenantId: actor.tenantId, companyId: actor.companyId, userId: actor.userId, action: "void", entity: "Invoice", entityId: inv.id });
 }
@@ -319,7 +325,10 @@ export async function recordPayment(tx: Tx, actor: Actor, input: PaymentInput) {
 }
 
 async function allocatePayment(tx: Tx, actor: Actor, paymentId: string, amount: ReturnType<typeof money>, customerSide: boolean, input: PaymentInput) {
-  const partyWhere = customerSide ? { customerId: input.customerId!, type: { in: ["SALES", "DEBIT_NOTE", "ADVANCE"] as InvoiceType[] } } : { supplierId: input.supplierId!, type: "PURCHASE" as InvoiceType };
+  // Payments are recorded in the company base currency, so they can only settle base-currency invoices.
+  const company = await tx.company.findUniqueOrThrow({ where: { id: actor.companyId } });
+  const partyWhere0 = customerSide ? { customerId: input.customerId!, type: { in: ["SALES", "DEBIT_NOTE", "ADVANCE"] as InvoiceType[] } } : { supplierId: input.supplierId!, type: "PURCHASE" as InvoiceType };
+  const partyWhere = { ...partyWhere0, currency: company.baseCurrency };
   let targets: { invoiceId: string; amount: ReturnType<typeof money> }[] = [];
   if (input.allocations?.length) {
     targets = input.allocations.map((a) => ({ invoiceId: a.invoiceId, amount: money(a.amount) }));
