@@ -89,10 +89,15 @@ async function run<S extends z.ZodTypeAny>(opts: Options<S>, fd: FormData, needC
     }
     const actor: Actor = { tenantId: ctx.tenant.id, companyId: ctx.company?.id ?? "", userId: ctx.user.id };
     const result = await db.$transaction((tx) => handler({ tx, data: parsed.data, ctx, actor }), { timeout: 30000, isolationLevel: "ReadCommitted" });
-    for (const p of opts.revalidate ?? ["/", "/(app)"]) revalidatePath(p, "layout");
+    // Pages are dynamic; a redirect renders the target fresh, so only revalidate in-place updates.
+    if (!(result && typeof result === "object" && result.redirect)) for (const p of opts.revalidate ?? ["/"]) revalidatePath(p, "layout");
     if (typeof result === "string") return { ok: true, message: result };
+    // On redirect the client performs a full navigation (fresh request, fresh tenant context).
+    // No cookies are written here: a cookie change makes the Next client refresh and abort the
+    // in-flight action response, which can leave the form pending forever.
     return { ok: true, ...(result ?? {}) };
   } catch (e) {
     return { ok: false, error: toMessage(e) };
   }
 }
+

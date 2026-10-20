@@ -15,7 +15,7 @@ Textarea.displayName = "Textarea";
 
 /** Native select: accessible, mobile-friendly, works without JS inside server-action forms. */
 export const NativeSelect = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(({ className, children, ...props }, ref) => (
-  <select ref={ref} className={cn(field, "h-10 appearance-none bg-[length:16px] bg-[left_.6rem_center] bg-no-repeat pl-8", "bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")]", className)} {...props}>
+  <select ref={ref} className={cn(field, "h-10 appearance-none bg-[length:16px] bg-[left_.6rem_center] bg-no-repeat pl-8", "select-chevron", className)} {...props}>
     {children}
   </select>
 ));

@@ -21,7 +21,9 @@ prisma/                 المخطط والترحيلات (مع قيود وتر�
 scripts/start.mjs       تشغيل الإنتاج: ترحيل آمن ثم Next.js
 src/lib/                المال، الصلاحيات، الجلسات، المحاسبة، حسابات المجالات (pure)
 src/server/services/    منطق الأعمال؛ كل دالة تتطلب Actor (tenant + company + user)
-src/server/actions/     Server Actions (مصادقة + صلاحية + تحقق + معاملة)
+src/server/actions-impl/ تنفيذ الإجراءات (مصادقة + صلاحية + تحقق Zod + معاملة)
+src/server/actions/     واجهات العميل للإجراءات (مولّدة عبر scripts/gen-actions.py)
+src/app/api/actions/    نقطة تنفيذ الإجراءات: فحص نفس المصدر (CSRF) + الجلسة + JSON
 src/app/(auth)/         الدخول، الإعداد الأولي، الدعوات، إعادة التعيين
 src/app/(app)/          التطبيق (لوحة التحكم والوحدات)
 src/app/admin/          إدارة المنصة (Super Admin)

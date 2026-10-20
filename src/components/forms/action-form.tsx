@@ -1,6 +1,6 @@
 "use client";
-import { useRouter } from "next/navigation";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import { toast } from "sonner";
@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import type { ActionResult } from "@/server/action";
 import { cn } from "@/lib/utils";
+import { navigateWithFlash } from "@/components/flash-toast";
 
 type Action = (prev: ActionResult | null, fd: FormData) => Promise<ActionResult>;
 
@@ -30,10 +31,13 @@ export function ActionForm({
   useEffect(() => {
     if (!state) return;
     if (state.ok) {
+      onSuccess?.(state);
+      // Full navigation: always renders the target fresh (the message arrives via the flash cookie).
+      if (state.redirect) return navigateWithFlash(state.redirect, state.message ?? successMessage);
       toast.success(state.message ?? successMessage ?? "تم الحفظ بنجاح");
       if (resetOnSuccess) ref.current?.reset();
-      onSuccess?.(state);
-      if (state.redirect) router.push(state.redirect);
+      // Re-render server components with the new data (fresh request).
+      router.refresh();
     } else toast.error(state.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);

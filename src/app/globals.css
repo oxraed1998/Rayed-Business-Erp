@@ -71,6 +71,7 @@
 }
 
 @layer components {
+  .select-chevron { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
   .skeleton { @apply relative overflow-hidden rounded-md bg-muted; }
   .skeleton::after { content: ""; @apply absolute inset-0 -translate-x-full bg-gradient-to-l from-transparent via-white/40 to-transparent dark:via-white/5; animation: shimmer 1.6s infinite; }
 }

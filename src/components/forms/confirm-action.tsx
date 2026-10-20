@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import type { ActionResult } from "@/server/action";
+import { navigateWithFlash } from "@/components/flash-toast";
 
 type Action = (prev: ActionResult | null, fd: FormData) => Promise<ActionResult>;
 
@@ -25,10 +26,10 @@ export function ConfirmAction({
       for (const [k, v] of Object.entries(fields)) fd.set(k, v);
       const r = await action(null, fd);
       if (r.ok) {
-        toast.success(r.message ?? "تم بنجاح");
         setOpen(false);
-        if (r.redirect) router.push(r.redirect);
-        else router.refresh();
+        if (r.redirect) return navigateWithFlash(r.redirect, r.message);
+        toast.success(r.message ?? "تم بنجاح");
+        router.refresh();
       } else toast.error(r.error);
     });
   return (

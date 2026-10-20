@@ -22,6 +22,7 @@ export function SidebarContent({ groups, superAdmin, onNavigate }: { groups: Nav
                 <li key={item.href}>
                   <Link
                     href={item.href}
+                    prefetch={false}
                     onClick={onNavigate}
                     className={cn(
                       "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-sidebar-foreground/80 transition-colors hover:bg-sidebar-active hover:text-white",
@@ -40,7 +41,7 @@ export function SidebarContent({ groups, superAdmin, onNavigate }: { groups: Nav
       {superAdmin && (
         <div>
           <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-sidebar-muted/80">المنصة</p>
-          <Link href="/admin" onClick={onNavigate} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-gold hover:bg-sidebar-active", pathname.startsWith("/admin") && "bg-sidebar-active")}>
+          <Link href="/admin" prefetch={false} onClick={onNavigate} className={cn("flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold text-gold hover:bg-sidebar-active", pathname.startsWith("/admin") && "bg-sidebar-active")}>
             <ShieldCheck className="size-[18px]" /> إدارة المنصة
           </Link>
         </div>

@@ -1,5 +1,4 @@
 import "server-only";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
@@ -38,13 +37,14 @@ export async function loginAction(_prev: ActionResult | null, fd: FormData): Pro
   await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await db.auditLog.create({ data: { tenantId: membership?.tenantId ?? null, userId: user.id, action: "login", entity: "User", entityId: user.id, ip } });
   const next = String(fd.get("next") ?? "/");
-  return { ok: true, message: `مرحبًا ${user.name}`, redirect: next.startsWith("/") && !next.startsWith("//") ? next : "/" };
+  return { ok: true, redirect: next.startsWith("/") && !next.startsWith("//") ? next : "/" };
 }
 
-export async function logoutAction() {
+export async function logoutAction(): Promise<ActionResult> {
   const s = await getSession();
   if (s) await db.auditLog.create({ data: { tenantId: s.tenantId, userId: s.userId, action: "logout", entity: "User", entityId: s.userId } });
   await destroySession();
+  return { ok: true };
 }
 
 export async function switchCompanyAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
@@ -78,10 +78,10 @@ export async function setupAction(_prev: ActionResult | null, fd: FormData): Pro
   try {
     const { user, tenant } = await bootstrapPlatform(parsed.data);
     await createSession(user.id, tenant.id);
-    return { ok: true, message: "تم إعداد المنصة بنجاح", redirect: "/settings/companies?first=1" };
   } catch (e) {
     return { ok: false, error: e instanceof ServiceError ? e.message : "تعذر إكمال الإعداد" };
   }
+  return { ok: true, message: "تم إعداد المنصة بنجاح", redirect: "/settings/companies?first=1" };
 }
 
 const acceptSchema = z.object({ token: z.string().min(10), name: z.string().trim().min(2, "الاسم مطلوب").max(100), password: z.string() });
@@ -91,14 +91,15 @@ export async function acceptInviteAction(_prev: ActionResult | null, fd: FormDat
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const problem = passwordProblem(parsed.data.password);
   if (problem) return { ok: false, error: problem };
+  let existing = false;
   try {
     const r = await acceptInvitation(parsed.data.token, parsed.data);
-    if (r.existingUser) return { ok: true, message: "تمت إضافتك للمنشأة. سجّل الدخول بحسابك الحالي.", redirect: "/login" };
-    await createSession(r.user.id, r.tenantId);
-    return { ok: true, message: "مرحبًا بك!", redirect: "/" };
+    existing = r.existingUser;
+    if (!existing) await createSession(r.user.id, r.tenantId);
   } catch (e) {
     return { ok: false, error: e instanceof ServiceError ? e.message : "تعذر قبول الدعوة" };
   }
+  return { ok: true, message: existing ? "تمت إضافتك للمنشأة. سجّل الدخول بحسابك الحالي." : "مرحبًا بك!", redirect: existing ? "/login" : "/" };
 }
 
 const resetSchema = z.object({ token: z.string().min(10), password: z.string(), confirm: z.string() });
@@ -125,7 +126,7 @@ const changeSchema = z.object({ current: z.string().min(1), password: z.string()
 
 export async function updateProfileAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const s = await getSession();
-  if (!s) redirect("/login");
+  if (!s) return { ok: false, error: "انتهت الجلسة، يرجى تسجيل الدخول مجددًا" };
   const parsed = changeSchema.partial({ password: true, confirm: true, current: true }).safeParse(formToObject(fd));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const d = parsed.data;

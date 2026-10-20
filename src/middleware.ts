@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC = ["/login", "/setup", "/invite", "/reset-password", "/forgot-password", "/api/health", "/manifest.webmanifest", "/icon.svg", "/apple-icon", "/sw.js"];
+const PUBLIC = ["/api/actions/session", "/login", "/setup", "/invite", "/reset-password", "/forgot-password", "/api/health", "/manifest.webmanifest", "/icon.svg", "/apple-icon", "/sw.js"];
 
 /** Fast redirect for anonymous visitors. Real authorization happens on the server per request. */
 export function middleware(req: NextRequest) {

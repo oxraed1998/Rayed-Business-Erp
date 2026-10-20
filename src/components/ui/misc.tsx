@@ -52,7 +52,7 @@ export function StatCard({ label, value, hint, icon: Icon, tone = "default" }: {
         <p className="text-xs font-semibold text-muted-foreground">{label}</p>
         {Icon && <span className={cn("grid size-9 place-items-center rounded-lg", tones[tone])}><Icon className="size-4" /></span>}
       </div>
-      <p className="num mt-2 text-right text-xl font-extrabold tracking-tight sm:text-2xl">{value}</p>
+      <p className="num mt-2 text-right text-lg font-extrabold tracking-tight sm:text-2xl">{value}</p>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );

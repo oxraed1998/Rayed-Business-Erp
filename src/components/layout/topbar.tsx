@@ -82,7 +82,7 @@ export function Topbar({ user, tenantName, companies, companyId, groups, superAd
               <DropdownMenu.Label className="px-2.5 py-1.5"><span className="block text-sm font-bold">{user.name}</span><span className="block text-xs text-muted-foreground" dir="ltr">{user.email}</span></DropdownMenu.Label>
               <DropdownMenu.Separator className="my-1 h-px bg-border" />
               <DropdownMenu.Item asChild className={menuItem}><Link href="/profile"><UserRound className="size-4" /> الملف الشخصي</Link></DropdownMenu.Item>
-              <DropdownMenu.Item className={cn(menuItem, "text-destructive")} onSelect={() => start(async () => { await logoutAction(); router.push("/login"); })}>
+              <DropdownMenu.Item className={cn(menuItem, "text-destructive")} onSelect={() => start(async () => { await logoutAction(); window.location.assign("/login"); })}>
                 <LogOut className="size-4" /> تسجيل الخروج
               </DropdownMenu.Item>
             </DropdownMenu.Content>
