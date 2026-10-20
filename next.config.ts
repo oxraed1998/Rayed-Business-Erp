@@ -10,6 +10,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Lint runs in CI (`pnpm lint`); production installs may omit devDependencies.
+  eslint: { ignoreDuringBuilds: true },
   serverExternalPackages: ["@prisma/client", "bcryptjs"],
   experimental: { serverActions: { bodySizeLimit: "1mb" } },
   async headers() {
