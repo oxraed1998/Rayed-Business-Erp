@@ -58,7 +58,7 @@ export async function receiveStock(
   const v = await lockVariant(tx, actor, input.variantId);
   await assertWarehouse(tx, actor, input.warehouseId);
   if (input.shipmentId && !(await tx.importShipment.findFirst({ where: { id: input.shipmentId, tenantId: actor.tenantId, companyId: actor.companyId } }))) throw NotFound("الشحنة");
-  const total = money(D(input.quantity).times(input.unitCost).times(input.fxRate));
+  const total = money(D(input.quantity).times(D(input.unitCost)).times(D(input.fxRate)));
   const next = receive(state(v), input.quantity, total);
   const acc = await systemAccounts(tx, actor.companyId, ["INV_CLOTHING"]);
   const desc = `شراء ${D(input.quantity).toString()} × ${v.sku}`;
@@ -101,7 +101,7 @@ export async function sellStock(
   const cogsLines: LineInput[] = [];
   for (const { l, v, next, cost } of prepared) {
     await tx.productVariant.update({ where: { id: v.id }, data: { quantityOnHand: next.quantity.toFixed(3), stockValue: toDb(next.value) } });
-    await tx.inventoryMovement.create({ data: { tenantId: actor.tenantId, companyId: actor.companyId, variantId: v.id, warehouseId: input.warehouseId, type: "SALE", quantity: D(l.quantity).neg().toFixed(3), totalCost: toDb(cost.neg()), revenue: toDb(D(l.quantity).times(l.unitPrice).minus(D(l.discount ?? 0))), date: input.date, note: invoice.number } });
+    await tx.inventoryMovement.create({ data: { tenantId: actor.tenantId, companyId: actor.companyId, variantId: v.id, warehouseId: input.warehouseId, type: "SALE", quantity: D(l.quantity).neg().toFixed(3), totalCost: toDb(cost.neg()), revenue: toDb(D(l.quantity).times(D(l.unitPrice)).minus(D(l.discount ?? 0))), date: input.date, note: invoice.number } });
     cogsLines.push({ accountId: acc("COGS_CLOTHING"), debit: cost, activityId: v.product.activityId }, { accountId: acc("INV_CLOTHING"), credit: cost, activityId: v.product.activityId });
   }
   if (cogsLines.some((c) => D(c.debit ?? 0).gt(0))) {
@@ -130,7 +130,7 @@ export async function returnFromCustomer(
   // Cost back = the average cost removed when this invoice sold the item.
   const soldCost = await tx.inventoryMovement.aggregate({ where: { variantId: v.id, type: "SALE", note: original.number }, _sum: { totalCost: true } });
   const unitCost = soldQty.isZero() ? D(0) : D(soldCost._sum.totalCost ?? 0).neg().div(soldQty);
-  const cost = money(unitCost.times(input.quantity));
+  const cost = money(unitCost.times(D(input.quantity)));
   const acc = await systemAccounts(tx, actor.companyId, ["INV_CLOTHING", "COGS_CLOTHING", "SALES_CLOTHING"]);
   const cn = await createInvoice(tx, actor, {
     type: "CREDIT_NOTE", issueDate: input.date, customerId: original.customerId, activityId: original.activityId, relatedInvoiceId: original.id,

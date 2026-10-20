@@ -18,11 +18,11 @@ describe("herd valuation", () => {
     expect(s.realizedProfit.toFixed(2)).toBe("7000.00");
   });
   it("average cost removal and no double counting", () => {
-    let events = [{ type: "PURCHASE" as const, quantity: 3, amount: "100", costRemoved: "0" }];
+    let events: { type: "PURCHASE" | "SALE"; quantity: number; amount: string; costRemoved: string }[] = [{ type: "PURCHASE", quantity: 3, amount: "100", costRemoved: "0" }];
     let s = herdSummary(events, [{ amount: "0.01" }]);
     const c1 = costOfRemoval(s, 1);
     expect(c1.toFixed(2)).toBe("33.34");
-    events = [...events, { type: "SALE" as const, quantity: 1, amount: "50", costRemoved: c1.toFixed(2) }];
+    events = [...events, { type: "SALE", quantity: 1, amount: "50", costRemoved: c1.toFixed(2) }];
     s = herdSummary(events, [{ amount: "0.01" }]);
     const c2 = costOfRemoval(s, 2);
     // Last animals carry the full residual so the herd value reaches exactly zero.

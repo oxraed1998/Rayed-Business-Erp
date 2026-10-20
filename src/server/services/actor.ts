@@ -28,3 +28,6 @@ export const zText = (max = 200) => z.string().trim().min(1, "حقل مطلوب"
 export const zOptText = (max = 500) =>
   z.string().trim().max(max).optional().nullable().transform((v) => (v ? v : null));
 export const zCurrency = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "رمز عملة غير صالح");
+export const zBool = z.preprocess((v) => v === "on" || v === "true" || v === true, z.boolean());
+export const zInt = (min: number, max: number) => z.coerce.number().int("عدد صحيح مطلوب").min(min).max(max);
+export const zOptId = z.string().max(40).optional().nullable().transform((v) => (v ? v : null));
