@@ -80,4 +80,12 @@ describe("vehicle trading", () => {
     await expect(tx((t) => allocateShipment(t, T.actor, s.id))).rejects.toThrow(/غير موزعة/);
     await assertBalanced(T.actor);
   });
+
+  it("records the source listing and refuses importing it twice", async () => {
+    const base = { manufacturer: "Kia", model: "K5", year: 2021, purchaseDate: new Date("2026-07-01"), purchaseCurrency: "KRW", purchasePrice: "11500000", exchangeRate: "0.0027", settlement: { accountId: T.acc("BANK") } };
+    const v = await tx((t) => createVehicle(t, T.actor, { ...base, sourceRef: "encar:42282970" }));
+    expect(v.sourceRef).toBe("encar:42282970");
+    expect(await balanceOf(T.actor, T.acc("INV_VEHICLES"))).not.toBe("0.00");
+    await expect(tx((t) => createVehicle(t, T.actor, { ...base, sourceRef: "encar:42282970" }))).rejects.toThrow(/مسبقًا/);
+  });
 });

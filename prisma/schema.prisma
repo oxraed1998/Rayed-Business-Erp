@@ -622,6 +622,8 @@ model Vehicle {
   reservedAt     DateTime?
   reservationDeposit Decimal?  @db.Decimal(18, 2)
   notes          String?
+  // External listing this vehicle was imported from, e.g. "encar:42864519".
+  sourceRef      String?
   purchaseEntryId String?
   saleEntryId    String?
   createdAt      DateTime      @default(now())
@@ -630,6 +632,7 @@ model Vehicle {
 
   @@unique([companyId, vin])
   @@index([tenantId, companyId, status])
+  @@index([companyId, sourceRef])
 }
 
 model VehicleExpense {
