@@ -1,5 +1,51 @@
-# Rayed Business ERP
+# Rayed Business ERP — رائد للأعمال
 
-Multi-company ERP for cars, livestock, clothing, accounting, partners, employees, contracts and invoices.
+منصة SaaS عربية متعددة المستأجرين لإدارة الأعمال التجارية: استيراد وبيع **السيارات**، واستيراد وتربية وبيع **المواشي**، واستيراد وبيع **الملابس**، مع **محاسبة مزدوجة القيد**، و**الشركاء والمستثمرين**، و**الفواتير والأقساط**، و**العقود**، و**التقارير**.
 
-Work in progress.
+Arabic-first (RTL, Cairo font), multi-tenant ERP built with Next.js 15, React 19, TypeScript, Tailwind CSS, Prisma 6 and PostgreSQL. Deployed on Railway.
+
+## البنية التقنية
+
+| الطبقة | التقنية |
+|---|---|
+| الواجهة | Next.js 15 (App Router) · React 19 · Tailwind CSS · مكوّنات بأسلوب shadcn/ui فوق Radix · Lucide · Recharts |
+| الخادم | Server Components + Server Actions، مع تحقق Zod |
+| البيانات | PostgreSQL · Prisma 6 · مخطط مستقل `erp` |
+| الأمان | جلسات في قاعدة البيانات (رمز عشوائي، يُخزَّن تجزئته فقط) · bcrypt · RBAC دقيق · عزل المستأجرين · تحديد المعدل |
+| الحسابات المالية | decimal.js وأعمدة NUMERIC، ولا أرقام عشرية عائمة في المبالغ |
+
+## هيكل المجلدات
+
+```
+prisma/                 المخطط والترحيلات (مع قيود وتريغرات محاسبية في قاعدة البيانات)
+scripts/start.mjs       تشغيل الإنتاج: ترحيل آمن ثم Next.js
+src/lib/                المال، الصلاحيات، الجلسات، المحاسبة، حسابات المجالات (pure)
+src/server/services/    منطق الأعمال؛ كل دالة تتطلب Actor (tenant + company + user)
+src/server/actions-impl/ تنفيذ الإجراءات (مصادقة + صلاحية + تحقق Zod + معاملة)
+src/server/actions/     واجهات العميل للإجراءات (مولّدة عبر scripts/gen-actions.py)
+src/app/api/actions/    نقطة تنفيذ الإجراءات: فحص نفس المصدر (CSRF) + الجلسة + JSON
+src/app/(auth)/         الدخول، الإعداد الأولي، الدعوات، إعادة التعيين
+src/app/(app)/          التطبيق (لوحة التحكم والوحدات)
+src/app/admin/          إدارة المنصة (Super Admin)
+tests/unit|integration|e2e
+legacy/server.js        النموذج الأولي السابق (للمرجع فقط)
+```
+
+## مبادئ العزل والأمان
+- كل جدول أعمال يحمل `tenantId`. الجداول التابعة لشركة ترتبط بها بمفتاح مركب `(companyId, tenantId)`، فترفض قاعدة البيانات أي سجل لا يطابق مستأجره مستأجر الشركة.
+- لا توجد قراءة أو كتابة إلا عبر سياق الخادم (`getTenantContext`) المبني من الجلسة والعضوية، ولا يُعتمد على تصفية الواجهة.
+- القيود المرحّلة **غير قابلة للتعديل أو الحذف** بقرار من قاعدة البيانات نفسها (تريغرات)، ولا تُرحَّل إلا متوازنة. التصحيح يكون بقيد عكسي.
+- سجل التدقيق للإضافة فقط.
+- لا توجد بيانات دخول افتراضية. حساب المالك الأول يُنشأ عبر `/setup` برمز `SETUP_TOKEN` السري.
+
+## التشغيل والنشر
+انظر [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+```bash
+pnpm install
+pnpm dev
+pnpm typecheck && pnpm lint && pnpm test:unit && pnpm test:integration
+```
+
+## الامتثال
+الفواتير الحالية **ليست** فواتير إلكترونية معتمدة من هيئة الزكاة والضريبة والجمارك (ZATCA). البنية مهيأة لذلك: ضريبة لكل سطر، وأرقام متسلسلة، ورقم ضريبي للشركة. أما الربط مع منصة "فاتورة" (التوقيع، ورمز QR، والإرسال) فلم يُنفَّذ بعد.

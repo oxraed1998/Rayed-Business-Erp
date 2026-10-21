@@ -1,0 +1,1074 @@
+// Rayed Business ERP — multi-tenant schema.
+//
+// Tenant isolation rules:
+//  * Every business table carries `tenantId`.
+//  * Company-scoped tables reference Company through the compound key
+//    (companyId, tenantId) so the database itself rejects rows whose tenant
+//    differs from their company's tenant.
+//  * Monetary values are NUMERIC (Decimal); never floats.
+//
+// Table names keep Prisma's PascalCase defaults on purpose: the production
+// database still holds the legacy lowercase tables (companies, entries,
+// branches, contacts) from the first prototype and they must not collide.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Platform / SaaS ─────────────────────────────
+
+enum PlanCode {
+  FREE
+  STARTER
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+model SubscriptionPlan {
+  id           String         @id @default(cuid())
+  code         PlanCode       @unique
+  nameAr       String
+  nameEn       String
+  maxCompanies Int
+  maxUsers     Int
+  features     String[]
+  monthlyPrice Decimal        @default(0) @db.Decimal(18, 2)
+  currency     String         @default("SAR")
+  createdAt    DateTime       @default(now())
+  subscriptions Subscription[]
+}
+
+model Tenant {
+  id           String        @id @default(cuid())
+  name         String
+  slug         String        @unique
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  subscription Subscription?
+  memberships  Membership[]
+  invitations  Invitation[]
+  companies    Company[]
+  partners     Partner[]
+  auditLogs    AuditLog[]
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  tenantId  String             @unique
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status    SubscriptionStatus @default(ACTIVE)
+  startsAt  DateTime           @default(now())
+  expiresAt DateTime?
+  // Billing is intentionally not wired to a payment provider yet.
+  billingNote String?
+  updatedAt DateTime           @updatedAt
+}
+
+// ───────────────────────────── Identity & access ─────────────────────────────
+
+enum Role {
+  TENANT_OWNER
+  COMPANY_ADMIN
+  ACCOUNTANT
+  MANAGER
+  EMPLOYEE
+  VIEWER
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  passwordHash  String
+  isSuperAdmin  Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  locale        String         @default("ar")
+  lastLoginAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      Session[]
+  memberships   Membership[]
+  resetTokens   PasswordResetToken[]
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  // SHA-256 of the random token stored in the cookie; the raw token is never persisted.
+  tokenHash   String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId    String?
+  companyId   String?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        Role
+  // Extra granular permissions on top of the role defaults, and explicit denials.
+  grants      String[] @default([])
+  denials     String[] @default([])
+  // Empty = all companies of the tenant. Otherwise only the listed companies.
+  companyIds  String[] @default([])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  employee    Employee?
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email      String
+  role       Role
+  companyIds String[]  @default([])
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdById String
+  createdAt  DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyId  String?
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  data       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([entity, entityId])
+}
+
+// ───────────────────────────── Organisation ─────────────────────────────
+
+enum ActivityType {
+  VEHICLES
+  LIVESTOCK
+  CLOTHING
+  GENERAL
+}
+
+model Company {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  legalName     String?
+  taxNumber     String?
+  crNumber      String?
+  baseCurrency  String   @default("SAR")
+  vatRate       Decimal  @default(15) @db.Decimal(5, 2)
+  address       String?
+  phone         String?
+  email         String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  activities    BusinessActivity[]
+  accounts      Account[]
+  journalEntries JournalEntry[]
+  periods       FinancialPeriod[]
+  exchangeRates ExchangeRate[]
+  customers     Customer[]
+  suppliers     Supplier[]
+  shipments     ImportShipment[]
+  vehicles      Vehicle[]
+  herds         LivestockHerd[]
+  products      Product[]
+  warehouses    Warehouse[]
+  movements     InventoryMovement[]
+  invoices      Invoice[]
+  payments      Payment[]
+  installmentPlans InstallmentPlan[]
+  contracts     Contract[]
+  employees     Employee[]
+  agreements    PartnershipAgreement[]
+  sequences     DocumentSequence[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+}
+
+model BusinessActivity {
+  id        String       @id @default(cuid())
+  tenantId  String
+  companyId String
+  company   Company      @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name      String
+  type      ActivityType
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  @@unique([id, tenantId])
+  @@index([tenantId, companyId])
+}
+
+model DocumentSequence {
+  id        String  @id @default(cuid())
+  tenantId  String
+  companyId String
+  company   Company @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  key       String
+  prefix    String
+  next      Int     @default(1)
+
+  @@unique([companyId, key])
+}
+
+// ───────────────────────────── Accounting ─────────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model Account {
+  id         String      @id @default(cuid())
+  tenantId   String
+  companyId  String
+  company    Company     @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  code       String
+  name       String
+  type       AccountType
+  // Stable identifier used by automatic postings (CASH, AR, VAT_OUTPUT, ...).
+  systemKey  String?
+  // CASH / BANK accounts can be used to receive or pay money.
+  isCashLike Boolean     @default(false)
+  bankName   String?
+  iban       String?
+  isActive   Boolean     @default(true)
+  parentId   String?
+  parent     Account?    @relation("AccountTree", fields: [parentId], references: [id])
+  children   Account[]   @relation("AccountTree")
+  lines      JournalLine[]
+  createdAt  DateTime    @default(now())
+
+  @@unique([companyId, code])
+  @@unique([companyId, systemKey])
+  @@index([tenantId, companyId])
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+model FinancialPeriod {
+  id        String   @id @default(cuid())
+  tenantId  String
+  companyId String
+  company   Company  @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name      String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  isClosed  Boolean  @default(false)
+  closedAt  DateTime?
+  closedById String?
+
+  @@unique([companyId, startDate])
+  @@index([tenantId, companyId])
+}
+
+model JournalEntry {
+  id           String        @id @default(cuid())
+  tenantId     String
+  companyId    String
+  company      Company       @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  number       String
+  date         DateTime      @db.Date
+  description  String
+  status       JournalStatus @default(DRAFT)
+  // Origin of automatic entries (INVOICE, PAYMENT, VEHICLE_SALE, ...).
+  sourceType   String?
+  sourceId     String?
+  reversalOfId String?       @unique
+  reversalOf   JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy   JournalEntry? @relation("Reversal")
+  postedAt     DateTime?
+  postedById   String?
+  createdById  String?
+  createdAt    DateTime      @default(now())
+  lines        JournalLine[]
+
+  @@unique([companyId, number])
+  @@index([tenantId, companyId, date])
+  @@index([sourceType, sourceId])
+}
+
+model JournalLine {
+  id          String       @id @default(cuid())
+  tenantId    String
+  entryId     String
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account      @relation(fields: [accountId], references: [id])
+  activityId  String?
+  // Sub-ledger party for receivable/payable/partner lines (statements are built from these).
+  customerId  String?
+  supplierId  String?
+  partnerId   String?
+  description String?
+  // Amounts in company base currency.
+  debit       Decimal      @default(0) @db.Decimal(18, 2)
+  credit      Decimal      @default(0) @db.Decimal(18, 2)
+  // Original transaction currency.
+  currency    String       @default("SAR")
+  fxRate      Decimal      @default(1) @db.Decimal(18, 6)
+  fxAmount    Decimal      @default(0) @db.Decimal(18, 2)
+
+  @@index([accountId])
+  @@index([entryId])
+  @@index([tenantId, activityId])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([partnerId])
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  tenantId  String
+  companyId String
+  company   Company  @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  currency  String
+  // Units of base currency per 1 unit of `currency`.
+  rate      Decimal  @db.Decimal(18, 6)
+  date      DateTime @db.Date
+
+  @@unique([companyId, currency, date])
+}
+
+// ───────────────────────────── Parties ─────────────────────────────
+
+model Customer {
+  id         String    @id @default(cuid())
+  tenantId   String
+  companyId  String
+  company    Company   @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  taxNumber  String?
+  companyName String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+  invoices   Invoice[]
+  payments   Payment[]
+  vehicles   Vehicle[]
+  installmentPlans InstallmentPlan[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, companyId])
+}
+
+model Supplier {
+  id          String    @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company   @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name        String
+  country     String?
+  phone       String?
+  email       String?
+  address     String?
+  taxNumber   String?
+  bankName    String?
+  iban        String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  invoices    Invoice[]
+  payments    Payment[]
+  vehicles    Vehicle[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, companyId])
+}
+
+// ───────────────────────────── Partners & investors ─────────────────────────────
+
+model Partner {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  email     String?
+  nationalId String?
+  isInvestor Boolean @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  shares    PartnerShare[]
+  transactions PartnerTransaction[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+}
+
+enum PartnershipScope {
+  COMPANY
+  ACTIVITY
+  SHIPMENT
+  VEHICLE
+  TRANSACTION
+}
+
+model PartnershipAgreement {
+  id         String           @id @default(cuid())
+  tenantId   String
+  companyId  String
+  company    Company          @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name       String
+  scope      PartnershipScope
+  // Id of the activity / shipment / vehicle / transaction the agreement covers.
+  scopeRefId String?
+  currency   String           @default("SAR")
+  notes      String?
+  createdAt  DateTime         @default(now())
+  shares     PartnerShare[]
+  transactions PartnerTransaction[]
+
+  @@index([tenantId, companyId])
+}
+
+model PartnerShare {
+  id             String               @id @default(cuid())
+  tenantId       String
+  agreementId    String
+  agreement      PartnershipAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  partnerId      String
+  partner        Partner              @relation(fields: [partnerId, tenantId], references: [id, tenantId])
+  capitalAmount  Decimal              @default(0) @db.Decimal(18, 2)
+  // Percentages 0..100. When null the share follows the capital ratio.
+  profitSharePct Decimal?             @db.Decimal(7, 4)
+  lossSharePct   Decimal?             @db.Decimal(7, 4)
+
+  @@unique([agreementId, partnerId])
+}
+
+enum PartnerTxnType {
+  CONTRIBUTION
+  WITHDRAWAL
+  PROFIT_DISTRIBUTION
+  LOSS_ALLOCATION
+}
+
+model PartnerTransaction {
+  id          String               @id @default(cuid())
+  tenantId    String
+  agreementId String
+  agreement   PartnershipAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  partnerId   String
+  partner     Partner              @relation(fields: [partnerId, tenantId], references: [id, tenantId])
+  type        PartnerTxnType
+  amount      Decimal              @db.Decimal(18, 2)
+  date        DateTime             @db.Date
+  note        String?
+  journalEntryId String?
+  createdAt   DateTime             @default(now())
+
+  @@index([tenantId, agreementId])
+}
+
+// ───────────────────────────── Imports ─────────────────────────────
+
+enum AllocationMethod {
+  QUANTITY
+  VALUE
+  WEIGHT
+  VOLUME
+}
+
+enum ShipmentStatus {
+  ORDERED
+  IN_TRANSIT
+  CUSTOMS
+  ARRIVED
+  CLOSED
+}
+
+model ImportShipment {
+  id          String           @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company          @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activityId  String?
+  reference   String
+  type        ActivityType
+  originCountry String?
+  status      ShipmentStatus   @default(ORDERED)
+  allocationMethod AllocationMethod @default(VALUE)
+  shippedAt   DateTime?        @db.Date
+  arrivedAt   DateTime?        @db.Date
+  notes       String?
+  createdAt   DateTime         @default(now())
+  expenses    ShipmentExpense[]
+  vehicles    Vehicle[]
+  herds       LivestockHerd[]
+  movements   InventoryMovement[]
+
+  @@unique([companyId, reference])
+  @@index([tenantId, companyId])
+}
+
+model ShipmentExpense {
+  id          String         @id @default(cuid())
+  tenantId    String
+  shipmentId  String
+  shipment    ImportShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  category    String
+  description String?
+  // Base-currency amount excluding recoverable VAT.
+  amount      Decimal        @db.Decimal(18, 2)
+  vatAmount   Decimal        @default(0) @db.Decimal(18, 2)
+  vatRecoverable Boolean     @default(true)
+  date        DateTime       @db.Date
+  allocatedAt DateTime?
+  createdAt   DateTime       @default(now())
+}
+
+// ───────────────────────────── Vehicles ─────────────────────────────
+
+enum VehicleStatus {
+  PURCHASED
+  IN_TRANSIT
+  CUSTOMS
+  IN_STOCK
+  RESERVED
+  SOLD
+  CANCELLED
+}
+
+model Vehicle {
+  id             String        @id @default(cuid())
+  tenantId       String
+  companyId      String
+  company        Company       @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activityId     String?
+  shipmentId     String?
+  shipment       ImportShipment? @relation(fields: [shipmentId], references: [id])
+  supplierId     String?
+  supplier       Supplier?     @relation(fields: [supplierId, tenantId], references: [id, tenantId])
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId, tenantId], references: [id, tenantId])
+  manufacturer   String
+  model          String
+  year           Int
+  vin            String?
+  color          String?
+  mileage        Int?
+  originCountry  String?
+  importCountry  String?
+  purchaseDate   DateTime?     @db.Date
+  purchaseCurrency String      @default("SAR")
+  purchasePrice  Decimal       @db.Decimal(18, 2)
+  exchangeRate   Decimal       @default(1) @db.Decimal(18, 6)
+  status         VehicleStatus @default(PURCHASED)
+  sellingPrice   Decimal?      @db.Decimal(18, 2)
+  saleDate       DateTime?     @db.Date
+  saleVat        Decimal?      @db.Decimal(18, 2)
+  reservedAt     DateTime?
+  reservationDeposit Decimal?  @db.Decimal(18, 2)
+  notes          String?
+  purchaseEntryId String?
+  saleEntryId    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  expenses       VehicleExpense[]
+
+  @@unique([companyId, vin])
+  @@index([tenantId, companyId, status])
+}
+
+model VehicleExpense {
+  id          String   @id @default(cuid())
+  tenantId    String
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  // SHIPPING, CUSTOMS_DUTY, CLEARANCE, INSPECTION, TRANSPORT, REPAIR, MAINTENANCE, OTHER, SHIPMENT_ALLOCATION
+  category    String
+  description String?
+  // Base-currency amount excluding VAT.
+  amount      Decimal  @db.Decimal(18, 2)
+  vatAmount   Decimal  @default(0) @db.Decimal(18, 2)
+  vatRecoverable Boolean @default(true)
+  date        DateTime @db.Date
+  shipmentExpenseId String?
+  journalEntryId String?
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId])
+}
+
+// ───────────────────────────── Livestock ─────────────────────────────
+
+enum HerdEventType {
+  PURCHASE
+  BIRTH
+  SALE
+  DEATH
+  WEIGHING
+  VACCINATION
+}
+
+model LivestockHerd {
+  id          String         @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company        @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activityId  String?
+  shipmentId  String?
+  shipment    ImportShipment? @relation(fields: [shipmentId], references: [id])
+  name        String
+  species     String
+  breed       String?
+  location    String?
+  notes       String?
+  createdAt   DateTime       @default(now())
+  events      HerdEvent[]
+  expenses    LivestockExpense[]
+  animals     Animal[]
+
+  @@index([tenantId, companyId])
+}
+
+model Animal {
+  id        String        @id @default(cuid())
+  tenantId  String
+  herdId    String
+  herd      LivestockHerd @relation(fields: [herdId], references: [id], onDelete: Cascade)
+  tag       String
+  sex       String?
+  birthDate DateTime?     @db.Date
+  status    String        @default("ACTIVE")
+  lastWeightKg Decimal?   @db.Decimal(10, 2)
+  createdAt DateTime      @default(now())
+
+  @@unique([herdId, tag])
+}
+
+model HerdEvent {
+  id          String        @id @default(cuid())
+  tenantId    String
+  herdId      String
+  herd        LivestockHerd @relation(fields: [herdId], references: [id], onDelete: Cascade)
+  type        HerdEventType
+  date        DateTime      @db.Date
+  quantity    Int
+  // PURCHASE: total acquisition cost. SALE: total sale revenue (ex-VAT).
+  amount      Decimal       @default(0) @db.Decimal(18, 2)
+  // Cost removed from the herd valuation (SALE/DEATH), frozen when recorded.
+  costRemoved Decimal       @default(0) @db.Decimal(18, 2)
+  avgWeightKg Decimal?      @db.Decimal(10, 2)
+  note        String?
+  journalEntryId String?
+  createdAt   DateTime      @default(now())
+
+  @@index([herdId, date])
+}
+
+model LivestockExpense {
+  id          String        @id @default(cuid())
+  tenantId    String
+  herdId      String
+  herd        LivestockHerd @relation(fields: [herdId], references: [id], onDelete: Cascade)
+  // FEED, VETERINARY, VACCINATION, LABOR, HOUSING, SHIPPING, CUSTOMS, OTHER
+  category    String
+  description String?
+  amount      Decimal       @db.Decimal(18, 2)
+  vatAmount   Decimal       @default(0) @db.Decimal(18, 2)
+  vatRecoverable Boolean    @default(true)
+  date        DateTime      @db.Date
+  journalEntryId String?
+  createdAt   DateTime      @default(now())
+
+  @@index([herdId, date])
+}
+
+// ───────────────────────────── Clothing / inventory ─────────────────────────────
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  tenantId  String
+  companyId String
+  company   Company  @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+  movements InventoryMovement[]
+
+  @@index([tenantId, companyId])
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company  @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activityId  String?
+  name        String
+  category    String?
+  brand       String?
+  supplierId  String?
+  createdAt   DateTime @default(now())
+  variants    ProductVariant[]
+
+  @@index([tenantId, companyId])
+}
+
+model ProductVariant {
+  id            String   @id @default(cuid())
+  tenantId      String
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku           String
+  barcode       String?
+  size          String?
+  color         String?
+  sellingPrice  Decimal  @default(0) @db.Decimal(18, 2)
+  weightKg      Decimal? @db.Decimal(10, 3)
+  volumeM3      Decimal? @db.Decimal(10, 4)
+  reorderLevel  Int      @default(0)
+  // Running totals maintained by inventory movements (weighted-average cost).
+  quantityOnHand Decimal @default(0) @db.Decimal(18, 3)
+  stockValue    Decimal  @default(0) @db.Decimal(18, 2)
+  createdAt     DateTime @default(now())
+  movements     InventoryMovement[]
+
+  @@unique([tenantId, sku])
+}
+
+enum MovementType {
+  PURCHASE
+  SALE
+  RETURN_IN
+  RETURN_OUT
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  LANDED_COST
+}
+
+model InventoryMovement {
+  id          String         @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company        @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  variantId   String
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  warehouseId String
+  warehouse   Warehouse      @relation(fields: [warehouseId], references: [id])
+  shipmentId  String?
+  shipment    ImportShipment? @relation(fields: [shipmentId], references: [id])
+  type        MovementType
+  // Signed quantity: positive in, negative out.
+  quantity    Decimal        @db.Decimal(18, 3)
+  // Signed base-currency cost effect on stock value.
+  totalCost   Decimal        @db.Decimal(18, 2)
+  // Revenue for SALE (ex-VAT).
+  revenue     Decimal        @default(0) @db.Decimal(18, 2)
+  // Original purchase currency details.
+  currency    String         @default("SAR")
+  fxRate      Decimal        @default(1) @db.Decimal(18, 6)
+  transferGroup String?
+  date        DateTime       @db.Date
+  note        String?
+  journalEntryId String?
+  createdAt   DateTime       @default(now())
+
+  @@index([tenantId, companyId, date])
+  @@index([variantId, warehouseId])
+}
+
+// ───────────────────────────── Invoicing & payments ─────────────────────────────
+
+enum InvoiceType {
+  SALES
+  PURCHASE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  ADVANCE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company       @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activityId  String?
+  type        InvoiceType
+  number      String
+  status      InvoiceStatus @default(DRAFT)
+  issueDate   DateTime      @db.Date
+  dueDate     DateTime?     @db.Date
+  customerId  String?
+  customer    Customer?     @relation(fields: [customerId, tenantId], references: [id, tenantId])
+  supplierId  String?
+  supplier    Supplier?     @relation(fields: [supplierId, tenantId], references: [id, tenantId])
+  // For credit/debit notes: the invoice they adjust.
+  relatedInvoiceId String?
+  currency    String        @default("SAR")
+  fxRate      Decimal       @default(1) @db.Decimal(18, 6)
+  subtotal    Decimal       @default(0) @db.Decimal(18, 2)
+  discountTotal Decimal     @default(0) @db.Decimal(18, 2)
+  vatTotal    Decimal       @default(0) @db.Decimal(18, 2)
+  total       Decimal       @default(0) @db.Decimal(18, 2)
+  amountPaid  Decimal       @default(0) @db.Decimal(18, 2)
+  notes       String?
+  journalEntryId String?
+  postedAt    DateTime?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  lines       InvoiceLine[]
+  allocations PaymentAllocation[]
+  installmentPlan InstallmentPlan?
+
+  @@unique([companyId, type, number])
+  @@index([tenantId, companyId, issueDate])
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  tenantId    String
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal @db.Decimal(18, 3)
+  unitPrice   Decimal @db.Decimal(18, 2)
+  discount    Decimal @default(0) @db.Decimal(18, 2)
+  vatRate     Decimal @default(15) @db.Decimal(5, 2)
+  lineNet     Decimal @db.Decimal(18, 2)
+  lineVat     Decimal @db.Decimal(18, 2)
+  lineTotal   Decimal @db.Decimal(18, 2)
+  // Revenue/expense account override; defaults by invoice type.
+  accountId   String?
+  sortOrder   Int     @default(0)
+}
+
+enum PaymentDirection {
+  IN
+  OUT
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  CHEQUE
+  OTHER
+}
+
+model Payment {
+  id          String           @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company          @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  number      String
+  direction   PaymentDirection
+  method      PaymentMethod
+  date        DateTime         @db.Date
+  amount      Decimal          @db.Decimal(18, 2)
+  currency    String           @default("SAR")
+  fxRate      Decimal          @default(1) @db.Decimal(18, 6)
+  // Cash/bank account money moves through.
+  accountId   String
+  customerId  String?
+  customer    Customer?        @relation(fields: [customerId, tenantId], references: [id, tenantId])
+  supplierId  String?
+  supplier    Supplier?        @relation(fields: [supplierId, tenantId], references: [id, tenantId])
+  isRefund    Boolean          @default(false)
+  reference   String?
+  notes       String?
+  journalEntryId String?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  allocations PaymentAllocation[]
+
+  @@unique([companyId, number])
+  @@index([tenantId, companyId, date])
+}
+
+model PaymentAllocation {
+  id          String       @id @default(cuid())
+  tenantId    String
+  paymentId   String
+  payment     Payment      @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId   String
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id])
+  installmentId String?
+  amount      Decimal      @db.Decimal(18, 2)
+}
+
+model InstallmentPlan {
+  id           String        @id @default(cuid())
+  tenantId     String
+  companyId    String
+  company      Company       @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  invoiceId    String        @unique
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  customerId   String?
+  customer     Customer?     @relation(fields: [customerId, tenantId], references: [id, tenantId])
+  totalAmount  Decimal       @db.Decimal(18, 2)
+  downPayment  Decimal       @default(0) @db.Decimal(18, 2)
+  count        Int
+  firstDueDate DateTime      @db.Date
+  createdAt    DateTime      @default(now())
+  installments Installment[]
+}
+
+model Installment {
+  id         String          @id @default(cuid())
+  tenantId   String
+  planId     String
+  plan       InstallmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  seq        Int
+  dueDate    DateTime        @db.Date
+  amount     Decimal         @db.Decimal(18, 2)
+  paidAmount Decimal         @default(0) @db.Decimal(18, 2)
+
+  @@unique([planId, seq])
+  @@index([tenantId, dueDate])
+}
+
+// ───────────────────────────── Contracts ─────────────────────────────
+
+enum ContractType {
+  IMPORT
+  PURCHASE
+  SALES
+  PARTNERSHIP
+  INVESTMENT
+  SUPPLIER
+  EMPLOYMENT
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  EXPIRED
+  TERMINATED
+}
+
+model Contract {
+  id          String         @id @default(cuid())
+  tenantId    String
+  companyId   String
+  company     Company        @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  number      String
+  type        ContractType
+  title       String
+  parties     String
+  startDate   DateTime       @db.Date
+  endDate     DateTime?      @db.Date
+  value       Decimal        @default(0) @db.Decimal(18, 2)
+  currency    String         @default("SAR")
+  paymentTerms String?
+  body        String?
+  status      ContractStatus @default(DRAFT)
+  approvedById String?
+  approvedAt  DateTime?
+  renewalReminderDays Int    @default(30)
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([companyId, number])
+  @@index([tenantId, companyId])
+}
+
+// ───────────────────────────── Employees ─────────────────────────────
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+model Employee {
+  id           String           @id @default(cuid())
+  tenantId     String
+  companyId    String
+  company      Company          @relation(fields: [companyId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  membershipId String?          @unique
+  membership   Membership?      @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  name         String
+  phone        String?
+  email        String?
+  nationalId   String?
+  department   String?
+  jobTitle     String?
+  hireDate     DateTime?        @db.Date
+  salary       Decimal?         @db.Decimal(18, 2)
+  salaryCurrency String         @default("SAR")
+  status       EmploymentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now())
+
+  @@index([tenantId, companyId])
+}
+
+// ───────────────────────────── Rate limiting ─────────────────────────────
+
+model RateLimit {
+  key       String   @id
+  count     Int
+  resetAt   DateTime
+}
