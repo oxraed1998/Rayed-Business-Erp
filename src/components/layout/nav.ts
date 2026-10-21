@@ -9,6 +9,7 @@ export const NAV: NavGroup[] = [
     label: "الأنشطة التجارية",
     items: [
       { href: "/vehicles", label: "السيارات", icon: "Car", permission: "vehicles.read" },
+      { href: "/vehicles/market", label: "سوق Encar الكوري", icon: "Globe2", permission: "vehicles.read" },
       { href: "/livestock", label: "المواشي", icon: "Beef", permission: "livestock.read" },
       { href: "/clothing", label: "الملابس", icon: "Shirt", permission: "clothing.read" },
       { href: "/shipments", label: "شحنات الاستيراد", icon: "Ship", permission: "inventory.read" },

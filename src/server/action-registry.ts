@@ -5,6 +5,7 @@ import * as admin from "@/server/actions-impl/admin";
 import * as companies from "@/server/actions-impl/companies";
 import * as contracts from "@/server/actions-impl/contracts";
 import * as employees from "@/server/actions-impl/employees";
+import * as encar from "@/server/actions-impl/encar";
 import * as inventory from "@/server/actions-impl/inventory";
 import * as invoices from "@/server/actions-impl/invoices";
 import * as livestock from "@/server/actions-impl/livestock";
@@ -16,7 +17,7 @@ import * as shipments from "@/server/actions-impl/shipments";
 import * as users from "@/server/actions-impl/users";
 import * as vehicles from "@/server/actions-impl/vehicles";
 
-export const ACTION_MODULES: Record<string, Record<string, unknown>> = { accounting, admin, companies, contracts, employees, inventory, invoices, livestock, parties, partners, payments, session, shipments, users, vehicles };
+export const ACTION_MODULES: Record<string, Record<string, unknown>> = { accounting, admin, companies, contracts, employees, encar, inventory, invoices, livestock, parties, partners, payments, session, shipments, users, vehicles };
 
 /** Actions callable without a session (sign-in, setup, invitations, password reset). */
 export const PUBLIC_ACTIONS = new Set(["session.loginAction", "session.setupAction", "session.acceptInviteAction", "session.resetPasswordAction", "session.logoutAction"]);

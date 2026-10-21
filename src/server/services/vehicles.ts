@@ -57,6 +57,7 @@ export interface VehicleInput {
   shipmentId?: string | null;
   supplierId?: string | null;
   notes?: string | null;
+  sourceRef?: string | null;
   settlement: Settlement;
 }
 
@@ -65,6 +66,7 @@ export async function createVehicle(tx: Tx, actor: Actor, input: VehicleInput) {
   if (input.shipmentId && !(await tx.importShipment.findFirst({ where: { id: input.shipmentId, tenantId: actor.tenantId, companyId: actor.companyId } }))) throw NotFound("الشحنة");
   if (input.supplierId && !(await tx.supplier.findFirst({ where: { id: input.supplierId, tenantId: actor.tenantId, companyId: actor.companyId } }))) throw NotFound("المورد");
   if (input.vin && (await tx.vehicle.findFirst({ where: { companyId: actor.companyId, vin: input.vin } }))) throw new ServiceError("رقم الهيكل (VIN) مسجل مسبقًا");
+  if (input.sourceRef && (await tx.vehicle.findFirst({ where: { companyId: actor.companyId, sourceRef: input.sourceRef } }))) throw new ServiceError("تم استيراد هذا الإعلان إلى مخزون الشركة مسبقًا");
 
   const base = money(D(input.purchasePrice).times(D(input.exchangeRate)));
   const vehicle = await tx.vehicle.create({
@@ -88,6 +90,7 @@ export async function createVehicle(tx: Tx, actor: Actor, input: VehicleInput) {
       exchangeRate: D(input.exchangeRate).toFixed(6),
       status: input.shipmentId ? "IN_TRANSIT" : "PURCHASED",
       notes: input.notes ?? null,
+      sourceRef: input.sourceRef ?? null,
     },
   });
   const acc = await systemAccounts(tx, actor.companyId, ["INV_VEHICLES"]);

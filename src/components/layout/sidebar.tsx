@@ -8,7 +8,10 @@ import { ICONS } from "./icons";
 
 export function SidebarContent({ groups, superAdmin, onNavigate }: { groups: NavGroup[]; superAdmin: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  const all = groups.flatMap((g) => g.items.map((i) => i.href));
+  // Most specific match wins (so /vehicles/market doesn't also highlight /vehicles).
+  const best = all.filter((h) => (h === "/" ? pathname === "/" : pathname === h || pathname.startsWith(h + "/"))).sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === best;
   return (
     <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-6">
       {groups.map((g) => (

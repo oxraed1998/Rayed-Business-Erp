@@ -182,6 +182,27 @@ await step("vehicle detail shows profit", async () => {
   await shot("vehicle-detail");
 });
 
+// ───────────── Encar market (live provider) ─────────────
+if (!process.env.E2E_SKIP_ENCAR) {
+  await step("Encar market: search, open listing, import to inventory", async () => {
+    await go("/vehicles/market?manufacturer=Kia");
+    const card = page.locator("main a[href^='/vehicles/market/']").first();
+    await card.waitFor({ timeout: 30000 });
+    await card.click();
+    await page.waitForURL(/vehicles\/market\/\d+/);
+    await page.waitForLoadState("networkidle");
+    await shot("encar-listing");
+    await openDialog("استيراد إلى المخزون");
+    await fill("exchangeRate", "0.0027");
+    await fill("settlement.accountId", 1);
+    await submit();
+    await page.waitForURL(/\/vehicles\/(?!market)[a-z0-9]+$/, { timeout: 20000 });
+    await page.getByText("مستورد من Encar").first().waitFor();
+    await page.goBack();
+    await page.getByText("موجودة في المخزون").first().waitFor({ timeout: 20000 });
+  });
+}
+
 // ───────────── Livestock ─────────────
 await step("livestock: herd, purchase 100, feed, sell 20, 3 deaths", async () => {
   await go("/livestock");
